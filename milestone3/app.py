@@ -1,12 +1,19 @@
 from flask import Flask, request, jsonify
-from datetime import datetime
+from datetime import datetime, timedelta
+from functools import wraps
+import jwt
 
 app = Flask(__name__)
 
+# JWT SECRET KEY
+SECRET_KEY = "MediTrack-Milestone3-Secret-Key"
+
 # ============================================================
 # MEDITRACK - MILESTONE 3
-# REST API, LOGIN, ROLE MANAGEMENT, NOTIFICATIONS & AUDIT LOG
+# REST API, JWT LOGIN, ROLE MANAGEMENT,
+# NOTIFICATIONS & AUDIT LOG
 # ============================================================
+
 
 # -------------------- USER DATA --------------------
 
@@ -28,6 +35,7 @@ users = [
     }
 ]
 
+
 # -------------------- PATIENT DATA --------------------
 
 patients = [
@@ -37,8 +45,16 @@ patients = [
         "age": 22,
         "gender": "Male",
         "phone": "9876543210"
+    },
+    {
+        "patient_id": "P002",
+        "name": "Priya",
+        "age": 25,
+        "gender": "Female",
+        "phone": "9876543211"
     }
 ]
+
 
 # -------------------- APPOINTMENT DATA --------------------
 
@@ -50,14 +66,58 @@ appointments = [
         "date": "2026-09-05",
         "time": "10:00 AM",
         "status": "Booked"
+    },
+    {
+        "appointment_id": "A002",
+        "patient_id": "P002",
+        "doctor": "Dr. Priya",
+        "date": "2026-09-10",
+        "time": "11:00 AM",
+        "status": "Booked"
     }
 ]
 
+
 # -------------------- OTHER DATA --------------------
 
-consultations = []
-prescriptions = []
-notifications = []
+consultations = [
+    {
+        "consultation_id": "C001",
+        "patient_id": "P002",
+        "symptoms": "Fever and headache",
+        "diagnosis": "Viral fever",
+        "treatment_plan": "Rest and medication"
+    }
+]
+
+prescriptions = [
+    {
+        "prescription_id": "PR001",
+        "patient_id": "P002",
+        "medicine": "Paracetamol",
+        "dosage": "500 mg",
+        "duration": "5 days"
+    }
+]
+
+notifications = [
+    {
+        "type": "Appointment Reminder",
+        "patient_id": "P002",
+        "message": "Appointment booked with Dr. Priya on 2026-09-10"
+    },
+    {
+        "type": "Prescription Alert",
+        "patient_id": "P002",
+        "message": "New prescription generated for P002"
+    },
+    {
+        "type": "Follow-up Reminder",
+        "patient_id": "P002",
+        "message": "Follow-up appointment is due."
+    }
+]
+
 audit_logs = []
 
 
@@ -66,6 +126,7 @@ audit_logs = []
 # ============================================================
 
 def create_audit_log(username, action):
+
     audit_logs.append({
         "username": username,
         "action": action,
@@ -74,11 +135,92 @@ def create_audit_log(username, action):
 
 
 # ============================================================
+# JWT TOKEN VERIFICATION
+# ============================================================
+
+def token_required(f):
+
+    @wraps(f)
+    def decorated(*args, **kwargs):
+
+        auth_header = request.headers.get("Authorization")
+
+        if not auth_header:
+            return jsonify({
+                "message": "Token is missing"
+            }), 401
+
+        try:
+
+            parts = auth_header.split()
+
+            if len(parts) != 2 or parts[0].lower() != "bearer":
+                return jsonify({
+                    "message": "Use Bearer token"
+                }), 401
+
+            token = parts[1]
+
+            decoded = jwt.decode(
+                token,
+                SECRET_KEY,
+                algorithms=["HS256"]
+            )
+
+            request.user = decoded
+
+        except jwt.ExpiredSignatureError:
+
+            return jsonify({
+                "message": "Token has expired"
+            }), 401
+
+        except jwt.InvalidTokenError:
+
+            return jsonify({
+                "message": "Invalid token"
+            }), 401
+
+        return f(*args, **kwargs)
+
+    return decorated
+
+
+# ============================================================
+# ROLE CHECK
+# ============================================================
+
+def role_required(*allowed_roles):
+
+    def decorator(f):
+
+        @wraps(f)
+        def decorated(*args, **kwargs):
+
+            user_role = request.user.get("role")
+
+            if user_role not in allowed_roles:
+
+                return jsonify({
+                    "message": "Access denied",
+                    "required_roles": list(allowed_roles),
+                    "your_role": user_role
+                }), 403
+
+            return f(*args, **kwargs)
+
+        return decorated
+
+    return decorator
+
+
+# ============================================================
 # HOME API
 # ============================================================
 
 @app.route("/", methods=["GET"])
 def home():
+
     return jsonify({
         "project": "MediTrack",
         "milestone": "Milestone 3",
@@ -87,7 +229,7 @@ def home():
 
 
 # ============================================================
-# LOGIN API
+# LOGIN API WITH JWT
 # ============================================================
 
 @app.route("/login", methods=["POST"])
@@ -96,6 +238,7 @@ def login():
     data = request.get_json()
 
     if not data:
+
         return jsonify({
             "message": "JSON data required"
         }), 400
@@ -110,6 +253,16 @@ def login():
             and user["password"] == password
         ):
 
+            token = jwt.encode(
+                {
+                    "username": username,
+                    "role": user["role"],
+                    "exp": datetime.utcnow() + timedelta(hours=2)
+                },
+                SECRET_KEY,
+                algorithm="HS256"
+            )
+
             create_audit_log(
                 username,
                 "Successful login"
@@ -118,7 +271,8 @@ def login():
             return jsonify({
                 "message": "Login successful",
                 "username": username,
-                "role": user["role"]
+                "role": user["role"],
+                "token": token
             })
 
     create_audit_log(
@@ -136,6 +290,7 @@ def login():
 # ============================================================
 
 @app.route("/patients", methods=["GET"])
+@token_required
 def get_patients():
 
     return jsonify({
@@ -149,6 +304,7 @@ def get_patients():
 # ============================================================
 
 @app.route("/patients/<patient_id>", methods=["GET"])
+@token_required
 def get_patient(patient_id):
 
     for patient in patients:
@@ -167,11 +323,14 @@ def get_patient(patient_id):
 # ============================================================
 
 @app.route("/patients", methods=["POST"])
+@token_required
+@role_required("doctor", "admin")
 def add_patient():
 
     data = request.get_json()
 
     if not data:
+
         return jsonify({
             "message": "JSON data required"
         }), 400
@@ -187,11 +346,10 @@ def add_patient():
     for field in required_fields:
 
         if field not in data:
+
             return jsonify({
                 "message": field + " is required"
             }), 400
-
-    # Check duplicate patient ID
 
     for patient in patients:
 
@@ -210,7 +368,7 @@ def add_patient():
     })
 
     create_audit_log(
-        "System",
+        request.user["username"],
         "Patient registered: " + data["patient_id"]
     )
 
@@ -225,11 +383,14 @@ def add_patient():
 # ============================================================
 
 @app.route("/patients/<patient_id>", methods=["PUT"])
+@token_required
+@role_required("doctor", "admin")
 def update_patient(patient_id):
 
     data = request.get_json()
 
     if not data:
+
         return jsonify({
             "message": "JSON data required"
         }), 400
@@ -259,7 +420,7 @@ def update_patient(patient_id):
             )
 
             create_audit_log(
-                "System",
+                request.user["username"],
                 "Patient updated: " + patient_id
             )
 
@@ -278,6 +439,8 @@ def update_patient(patient_id):
 # ============================================================
 
 @app.route("/patients/<patient_id>", methods=["DELETE"])
+@token_required
+@role_required("admin")
 def delete_patient(patient_id):
 
     for patient in patients:
@@ -287,7 +450,7 @@ def delete_patient(patient_id):
             patients.remove(patient)
 
             create_audit_log(
-                "System",
+                request.user["username"],
                 "Patient deleted: " + patient_id
             )
 
@@ -305,6 +468,7 @@ def delete_patient(patient_id):
 # ============================================================
 
 @app.route("/appointments", methods=["GET"])
+@token_required
 def get_appointments():
 
     return jsonify({
@@ -318,11 +482,14 @@ def get_appointments():
 # ============================================================
 
 @app.route("/appointments", methods=["POST"])
+@token_required
+@role_required("doctor", "admin")
 def create_appointment():
 
     data = request.get_json()
 
     if not data:
+
         return jsonify({
             "message": "JSON data required"
         }), 400
@@ -338,11 +505,10 @@ def create_appointment():
     for field in required_fields:
 
         if field not in data:
+
             return jsonify({
                 "message": field + " is required"
             }), 400
-
-    # Check patient
 
     patient_found = False
 
@@ -358,8 +524,6 @@ def create_appointment():
         return jsonify({
             "message": "Patient not found"
         }), 404
-
-    # Check duplicate appointment
 
     for appointment in appointments:
 
@@ -392,9 +556,8 @@ def create_appointment():
     })
 
     create_audit_log(
-        "System",
-        "Appointment created: "
-        + data["appointment_id"]
+        request.user["username"],
+        "Appointment created: " + data["appointment_id"]
     )
 
     return jsonify({
@@ -408,11 +571,14 @@ def create_appointment():
 # ============================================================
 
 @app.route("/appointments/<appointment_id>", methods=["PUT"])
+@token_required
+@role_required("doctor", "admin")
 def update_appointment(appointment_id):
 
     data = request.get_json()
 
     if not data:
+
         return jsonify({
             "message": "JSON data required"
         }), 400
@@ -442,9 +608,8 @@ def update_appointment(appointment_id):
             )
 
             create_audit_log(
-                "System",
-                "Appointment updated: "
-                + appointment_id
+                request.user["username"],
+                "Appointment updated: " + appointment_id
             )
 
             return jsonify({
@@ -462,6 +627,8 @@ def update_appointment(appointment_id):
 # ============================================================
 
 @app.route("/appointments/<appointment_id>", methods=["DELETE"])
+@token_required
+@role_required("doctor", "admin")
 def cancel_appointment(appointment_id):
 
     for appointment in appointments:
@@ -477,9 +644,8 @@ def cancel_appointment(appointment_id):
             })
 
             create_audit_log(
-                "System",
-                "Appointment cancelled: "
-                + appointment_id
+                request.user["username"],
+                "Appointment cancelled: " + appointment_id
             )
 
             return jsonify({
@@ -496,11 +662,14 @@ def cancel_appointment(appointment_id):
 # ============================================================
 
 @app.route("/consultations", methods=["POST"])
+@token_required
+@role_required("doctor")
 def create_consultation():
 
     data = request.get_json()
 
     if not data:
+
         return jsonify({
             "message": "JSON data required"
         }), 400
@@ -524,9 +693,8 @@ def create_consultation():
     consultations.append(data)
 
     create_audit_log(
-        "Doctor",
-        "Consultation created: "
-        + data["consultation_id"]
+        request.user["username"],
+        "Consultation created: " + data["consultation_id"]
     )
 
     return jsonify({
@@ -540,6 +708,7 @@ def create_consultation():
 # ============================================================
 
 @app.route("/consultations", methods=["GET"])
+@token_required
 def get_consultations():
 
     return jsonify({
@@ -553,11 +722,14 @@ def get_consultations():
 # ============================================================
 
 @app.route("/prescriptions", methods=["POST"])
+@token_required
+@role_required("doctor")
 def create_prescription():
 
     data = request.get_json()
 
     if not data:
+
         return jsonify({
             "message": "JSON data required"
         }), 400
@@ -590,9 +762,8 @@ def create_prescription():
     })
 
     create_audit_log(
-        "Doctor",
-        "Prescription generated: "
-        + data["prescription_id"]
+        request.user["username"],
+        "Prescription generated: " + data["prescription_id"]
     )
 
     return jsonify({
@@ -606,6 +777,7 @@ def create_prescription():
 # ============================================================
 
 @app.route("/prescriptions", methods=["GET"])
+@token_required
 def get_prescriptions():
 
     return jsonify({
@@ -619,11 +791,14 @@ def get_prescriptions():
 # ============================================================
 
 @app.route("/notifications/followup", methods=["POST"])
+@token_required
+@role_required("doctor", "admin")
 def followup_notification():
 
     data = request.get_json()
 
     if not data:
+
         return jsonify({
             "message": "JSON data required"
         }), 400
@@ -641,7 +816,7 @@ def followup_notification():
     })
 
     create_audit_log(
-        "System",
+        request.user["username"],
         "Follow-up reminder created"
     )
 
@@ -655,6 +830,7 @@ def followup_notification():
 # ============================================================
 
 @app.route("/notifications", methods=["GET"])
+@token_required
 def get_notifications():
 
     return jsonify({
@@ -668,6 +844,8 @@ def get_notifications():
 # ============================================================
 
 @app.route("/audit-logs", methods=["GET"])
+@token_required
+@role_required("admin")
 def get_audit_logs():
 
     return jsonify({
@@ -681,6 +859,8 @@ def get_audit_logs():
 # ============================================================
 
 @app.route("/dashboard", methods=["GET"])
+@token_required
+@role_required("doctor", "admin")
 def dashboard():
 
     return jsonify({
@@ -701,7 +881,7 @@ if __name__ == "__main__":
 
     print("=" * 60)
     print("              MEDITRACK - MILESTONE 3")
-    print("       REST API & NOTIFICATION MANAGEMENT")
+    print("       REST API, JWT & NOTIFICATION MANAGEMENT")
     print("=" * 60)
 
     print("\nServer running at:")
