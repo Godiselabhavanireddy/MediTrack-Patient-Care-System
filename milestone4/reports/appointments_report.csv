@@ -1,0 +1,3 @@
+appointment_id,patient_id,doctor,date,time,status
+A001,P001,Dr. Ravi,2026-09-05,10:00 AM,Booked
+A002,P002,Dr. Priya,2026-09-10,11:00 AM,Booked

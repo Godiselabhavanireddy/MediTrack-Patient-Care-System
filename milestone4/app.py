@@ -1,4 +1,7 @@
-from flask import Flask, request, jsonify
+import csv
+import io
+from reportlab.pdfgen import canvas
+from flask import Flask, jsonify, request, send_file
 from datetime import datetime, timedelta
 from functools import wraps
 import jwt
@@ -1071,6 +1074,226 @@ def summary_report():
 # ============================================================
 # RUN APPLICATION
 # ============================================================
+# ============================================================
+# MILESTONE 4 - CSV AND PDF REPORT EXPORT
+# ============================================================
+
+@app.route("/reports/patients/csv", methods=["GET"])
+@token_required
+@role_required("doctor", "admin")
+def patients_csv():
+
+    output = io.StringIO()
+
+    if patients:
+        fieldnames = list(patients[0].keys())
+        writer = csv.DictWriter(output, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(patients)
+
+    response = app.response_class(
+        output.getvalue(),
+        mimetype="text/csv"
+    )
+
+    response.headers["Content-Disposition"] = (
+        "attachment; filename=patients_report.csv"
+    )
+
+    return response
+
+
+@app.route("/reports/appointments/csv", methods=["GET"])
+@token_required
+@role_required("doctor", "admin")
+def appointments_csv():
+
+    output = io.StringIO()
+
+    if appointments:
+        fieldnames = list(appointments[0].keys())
+        writer = csv.DictWriter(output, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(appointments)
+
+    response = app.response_class(
+        output.getvalue(),
+        mimetype="text/csv"
+    )
+
+    response.headers["Content-Disposition"] = (
+        "attachment; filename=appointments_report.csv"
+    )
+
+    return response
+
+
+@app.route("/reports/prescriptions/csv", methods=["GET"])
+@token_required
+@role_required("doctor", "admin")
+def prescriptions_csv():
+
+    output = io.StringIO()
+
+    if prescriptions:
+        fieldnames = list(prescriptions[0].keys())
+        writer = csv.DictWriter(output, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(prescriptions)
+
+    response = app.response_class(
+        output.getvalue(),
+        mimetype="text/csv"
+    )
+
+    response.headers["Content-Disposition"] = (
+        "attachment; filename=prescriptions_report.csv"
+    )
+
+    return response
+
+
+@app.route("/reports/patients/pdf", methods=["GET"])
+@token_required
+@role_required("doctor", "admin")
+def patients_pdf():
+
+    buffer = io.BytesIO()
+    pdf = canvas.Canvas(buffer)
+
+    pdf.setTitle("MediTrack Patient Report")
+
+    pdf.drawString(50, 800, "MediTrack - Patient Report")
+    pdf.drawString(
+        50,
+        780,
+        f"Total Patients: {len(patients)}"
+    )
+
+    y = 750
+
+    for patient in patients:
+
+        text = (
+            f"{patient.get('patient_id', '')} | "
+            f"{patient.get('name', '')} | "
+            f"{patient.get('age', '')} | "
+            f"{patient.get('gender', '')}"
+        )
+
+        pdf.drawString(50, y, text)
+        y -= 20
+
+        if y < 50:
+            pdf.showPage()
+            y = 800
+
+    pdf.save()
+
+    buffer.seek(0)
+
+    return send_file(
+        buffer,
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name="patients_report.pdf"
+    )
+
+
+@app.route("/reports/appointments/pdf", methods=["GET"])
+@token_required
+@role_required("doctor", "admin")
+def appointments_pdf():
+
+    buffer = io.BytesIO()
+    pdf = canvas.Canvas(buffer)
+
+    pdf.setTitle("MediTrack Appointment Report")
+
+    pdf.drawString(50, 800, "MediTrack - Appointment Report")
+    pdf.drawString(
+        50,
+        780,
+        f"Total Appointments: {len(appointments)}"
+    )
+
+    y = 750
+
+    for appointment in appointments:
+
+        text = (
+            f"{appointment.get('appointment_id', '')} | "
+            f"{appointment.get('doctor', '')} | "
+            f"{appointment.get('patient_id', '')} | "
+            f"{appointment.get('date', '')} | "
+            f"{appointment.get('status', '')}"
+        )
+
+        pdf.drawString(50, y, text)
+        y -= 20
+
+        if y < 50:
+            pdf.showPage()
+            y = 800
+
+    pdf.save()
+
+    buffer.seek(0)
+
+    return send_file(
+        buffer,
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name="appointments_report.pdf"
+    )
+
+
+@app.route("/reports/prescriptions/pdf", methods=["GET"])
+@token_required
+@role_required("doctor", "admin")
+def prescriptions_pdf():
+
+    buffer = io.BytesIO()
+    pdf = canvas.Canvas(buffer)
+
+    pdf.setTitle("MediTrack Prescription Report")
+
+    pdf.drawString(50, 800, "MediTrack - Prescription Report")
+    pdf.drawString(
+        50,
+        780,
+        f"Total Prescriptions: {len(prescriptions)}"
+    )
+
+    y = 750
+
+    for prescription in prescriptions:
+
+        text = (
+            f"{prescription.get('prescription_id', '')} | "
+            f"{prescription.get('patient_id', '')} | "
+            f"{prescription.get('medicine', '')} | "
+            f"{prescription.get('dosage', '')} | "
+            f"{prescription.get('duration', '')}"
+        )
+
+        pdf.drawString(50, y, text)
+        y -= 20
+
+        if y < 50:
+            pdf.showPage()
+            y = 800
+
+    pdf.save()
+
+    buffer.seek(0)
+
+    return send_file(
+        buffer,
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name="prescriptions_report.pdf"
+    )
 # ============================================================
 # MILESTONE 4 - ANALYTICS
 # ============================================================
