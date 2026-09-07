@@ -1008,7 +1008,66 @@ def doctor_analytics():
         "total_doctors": len(doctors),
         "doctors": doctors
     })
+# ============================================================
+# MILESTONE 4 - REPORTS
+# ============================================================
 
+@app.route("/reports/patients", methods=["GET"])
+@token_required
+@role_required("doctor", "admin")
+def patient_report():
+
+    return jsonify({
+        "report": "Patient Report",
+        "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "total_patients": len(patients),
+        "patients": patients
+    })
+
+
+@app.route("/reports/appointments", methods=["GET"])
+@token_required
+@role_required("doctor", "admin")
+def appointment_report():
+
+    return jsonify({
+        "report": "Appointment Report",
+        "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "total_appointments": len(appointments),
+        "appointments": appointments
+    })
+
+
+@app.route("/reports/prescriptions", methods=["GET"])
+@token_required
+@role_required("doctor", "admin")
+def prescription_report():
+
+    return jsonify({
+        "report": "Prescription Report",
+        "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "total_prescriptions": len(prescriptions),
+        "prescriptions": prescriptions
+    })
+
+
+@app.route("/reports/summary", methods=["GET"])
+@token_required
+@role_required("doctor", "admin")
+def summary_report():
+
+    return jsonify({
+        "report": "MediTrack Summary Report",
+        "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "summary": {
+            "patients": len(patients),
+            "appointments": len(appointments),
+            "consultations": len(consultations),
+            "prescriptions": len(prescriptions),
+            "notifications": len(notifications),
+            "audit_logs": len(audit_logs)
+        }
+    })
 # ============================================================
 # RUN APPLICATION
 # ============================================================
